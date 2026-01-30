@@ -1,12 +1,16 @@
+from dotenv import load_dotenv
+load_dotenv() 
+
+import os
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.api.api_router import api_router
-from app.core.config import settings
-from app.db import init_db
-import logging
+
 from app.core.logging import configure_logging
-import os
+from app.core.config import settings
+from app.api.api_router import api_router
+from app.db import init_db
 
 configure_logging()
 
@@ -29,5 +33,4 @@ app.include_router(api_router, prefix="/api")
 @app.on_event("startup")
 def startup_event():
     logging.info("Starting up: initializing DB...")
-
     init_db.init_extensions()
