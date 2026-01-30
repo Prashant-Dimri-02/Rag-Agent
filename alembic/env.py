@@ -5,6 +5,8 @@ from sqlalchemy import pool
 from app.models.file_embedding import FileEmbedding
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
+import os
+from sqlalchemy import create_engine
 from app.models.refresh_token import RefreshToken
 
 from alembic import context
@@ -61,11 +63,8 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    connectable = create_engine(DATABASE_URL)
 
     with connectable.connect() as connection:
         context.configure(
