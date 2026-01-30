@@ -49,7 +49,7 @@ class BuildService:
 
         # create embeddings (CHUNKED)
         chunks = self.wks._chunk_text(text_content)
-
+        print(chunks,"---chunks---")
         for chunk in chunks:
             embedding_vector = self.embedding_service.create_embedding(chunk)
 
@@ -59,7 +59,7 @@ class BuildService:
             db_embedding = FileEmbedding(
                 file_id=db_file.id,
                 embedding=embedding_vector,
-                raw_text=chunk,
+                text_content=chunk,
                 source_type="file",
             )
 

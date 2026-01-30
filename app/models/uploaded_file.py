@@ -1,6 +1,6 @@
 # app/models/uploaded_file.py
 
-from sqlalchemy import Column, Integer, String, DateTime, Text
+from sqlalchemy import BigInteger, Column, Integer, String, DateTime, Text
 from sqlalchemy.sql import func
 from app.db.base import Base
 
@@ -16,3 +16,4 @@ class UploadedFile(Base):
     text_content = Column(Text, nullable=True)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     source_type = Column(String(50), nullable=True, default="file")
+    user_id = Column(BigInteger, nullable=True)

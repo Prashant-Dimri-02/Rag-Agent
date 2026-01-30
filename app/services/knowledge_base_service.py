@@ -30,6 +30,7 @@ class KnowledgeBaseService:
             embedding=embedding_vector,
             text_content=combined_text,
             source_type="kb_qa",
+            
         )
 
         self.db.add(db_embedding)

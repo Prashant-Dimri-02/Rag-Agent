@@ -1,66 +1,108 @@
-case_ai_backend/
+PS D:\Rag Bot> tree /F
+Folder PATH listing for volume New Volume
+Volume serial number is 7278-6406
+D:.
+│   .env
+│   .gitignore
+│   alembic.ini
+│   docker-compose.yml
+│   Dockerfile
+│   README.md
+│   requirements.txt
+│   structure.txt
 │
-├── app/
-│   ├── main.py
-│   ├── core/
-│   │   ├── config.py
-│   │   ├── security.py
-│   │   ├── dependencies.py
-│   │   └── logging.py
+├───alembic
+│   │   env.py
+│   │   README
+│   │   script.py.mako
 │   │
-│   ├── db/
-│   │   ├── base.py
-│   │   ├── session.py
-│   │   └── init_db.py
-│   │
-│   ├── models/
-│   │   ├── user.py
-│   │   ├── role.py
-│   │   ├── case.py
-│   │   ├── case_file.py
-│   │   ├── embedding.py
-│   │   └── refresh_token.py
-│   │
-│   ├── schemas/
-│   │   ├── auth.py
-│   │   ├── user.py
-│   │   ├── case.py
-│   │   ├── file.py
-│   │   └── qa.py
-│   │
-│   ├── api/
-│   │   ├── api_router.py
-│   │   └── v1/
-│   │       ├── auth.py
-│   │       ├── users.py
-│   │       ├── cases.py
-│   │       ├── files.py
-│   │       └── qa.py
-│   │
-│   ├── services/
-│   │   ├── auth_service.py
-│   │   ├── case_service.py
-│   │   ├── file_service.py
-│   │   ├── embedding_service.py
-│   │   └── qa_service.py
-│   │
-│   ├── utils/
-│   │   ├── password.py
-│   │   ├── pdf_parser.py
-│   │   ├── text_chunker.py
-│   │   └── s3.py
-│   │
-│   └── tests/
-│       ├── test_auth.py
-│       ├── test_cases.py
-│       └── test_qa.py
+│   ├───versions
+│   │   │   31e0daf2c1bb_added_user_id_to_most_tables.py
+│   │   │   b67f2b8c0730_add_columns.py
+│   │   │   b78bbff17260_add_columns.py
+│   │   │   bf7af76aaaca_add_columns.py
+│   │   │   d63e915e4b92_add_columns.py
+│   │   │   ef631af99ce9_add_columns.py
 │
-├── alembic/
-│   ├── versions/
-│   └── env.py
+├───app
+│   │   main.py
+│   │
+│   ├───api
+│   │   │   api_router.py
+│   │   │
+│   │   ├───v1
+│   │   │   │   auth.py
+│   │   │   │   knowledge_base.py
+│   │   │   │   message.py
+│   │   │   │   qa.py
+│   │   │   │   upload.py
+│   │   │   │   website_kb.py
+│   │   │   │
+│   │   │   └───__pycache__
+│   │   │           auth.cpython-311.pyc
+│   │   │           knowledge_base.cpython-311.pyc
+│   │   │           message.cpython-311.pyc
+│   │   │           qa.cpython-311.pyc
+│   │   │           upload.cpython-311.pyc
+│   │   │           website_kb.cpython-311.pyc
+│   │
+│   ├───core
+│   │   │   config.py
+│   │   │   dependencies.py
+│   │   │   logging.py
+│   │   │   security.py
+│   │   │
+│   │   └───__pycache__
+│   │           config.cpython-311.pyc
+│   │           dependencies.cpython-311.pyc
+│   │           logging.cpython-311.pyc
+│   │           security.cpython-311.pyc
+│   │
+│   ├───db
+│   │   │   base.py
+│   │   │   init_db.py
+│   │   │   session.py
+│   │   │
+│   │   └───__pycache__
+│   │           base.cpython-311.pyc
+│   │           init_db.cpython-311.pyc
+│   │           session.cpython-311.pyc
+│   │
+│   ├───models
+│   │   │   chat.py
+│   │   │   file_embedding.py
+│   │   │   refresh_token.py
+│   │   │   uploaded_file.py
+│   │   │   user.py
+│   │   │   __init__.py
+│   │           
+│   │          
+│   │
+│   ├───schemas
+│   │   │   auth.py
+│   │   │   knowledge_base.py
+│   │   │   user.py
+│   │   │   website_kb.py
+│   │   │
+│   │
+│   ├───services
+│   │   │   auth_service.py
+│   │   │   build_service.py
+│   │   │   embedding_service.py
+│   │   │   file_text_extractor.py
+│   │   │   knowledge_base_service.py
+│   │   │   qa_service.py
+│   │   │   vector_search.py
+│   │   │   website_kb_service.py
+│   │   │   web_scraper.py
+│   │   │
+│   │
+│   ├───uploads
+│   ├───utils
+│   │   │   password.py
 │
-├── alembic.ini
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── README.md
+└───uploads
+        0acd7865e32c4d749ad9090f9715bde2.docx
+        0ccaa1d9a167406aa481e9c13c87ef69.docx
+        23fd1c1f9213419c9020ff4b6e33f86a.docx
+        3e246616fd9444b2b831aa7bec8bec77.docx

@@ -7,10 +7,10 @@ router = APIRouter()
 
 
 @router.post("/qa")
-def ask_question(payload: dict, db: Session = Depends(get_db)):
+async def ask_question(payload: dict, db: Session = Depends(get_db)):
     try:
         service = QAService(db)
-        answer = service.ask(payload["question"])
+        answer = await service.ask(payload["question"], payload["user_id"])
         return {"answer": answer}
 
     except ValueError as e:

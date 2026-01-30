@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Float, Integer, ForeignKey, DateTime, String, Text
+from sqlalchemy import Column, Float, Integer, ForeignKey, DateTime, String, Text,BigInteger
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.sql import func
 from app.db.base import Base
@@ -11,7 +11,7 @@ class FileEmbedding(Base):
 
     file_id = Column(Integer, ForeignKey("uploaded_files.id", ondelete="CASCADE"), nullable=True)
     text_content = Column(Text, nullable=True)
-
+    user_id= Column(BigInteger, nullable=True)
     # OpenAI embedding vector (e.g. 1536 dims for text-embedding-3-small)
     
     embedding = Column(Vector(1536), nullable=False)

@@ -6,10 +6,11 @@ from app.models.chat import Chat
 router = APIRouter()
 
 
-@router.get("/messages")
-def get_messages(db: Session = Depends(get_db)):
+@router.get("/messages{user_id}")
+def get_messages(user_id: int, db: Session = Depends(get_db)):
     chats = (
         db.query(Chat)
+        .filter(Chat.user_id == user_id)
         .order_by(Chat.created_at.asc())
         .all()
     )

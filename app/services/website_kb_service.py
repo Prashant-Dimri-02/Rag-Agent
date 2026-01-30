@@ -11,7 +11,7 @@ class WebsiteKBService:
         self.db = db
         self.embedding_service = EmbeddingService()
 
-    def add_website(self, url: str) -> dict:
+    def add_website(self, url: str):
         url = url.strip()
         if not url:
             raise ValueError("URL is required")
