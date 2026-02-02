@@ -1,9 +1,8 @@
-version: "3.8"
-
 services:
   db:
     image: ankane/pgvector:latest
     container_name: ragbot-db
+    restart: always
     env_file:
       - .env
     environment:
@@ -15,7 +14,7 @@ services:
     volumes:
       - newproject_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,14 +22,29 @@ services:
   web:
     build: .
     container_name: ragbot-web
+    restart: always
     env_file:
       - .env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "8001:8000"
     volumes:
       - .:/app
+    command: >
+      sh -c "
+        echo 'Waiting for DB...' &&
+        until pg_isready -h db -p 5432 -U ${POSTGRES_USER}; do
+          sleep 2;
+        done &&
+        echo 'Enabling pgvector...' &&
+        PGPASSWORD=${POSTGRES_PASSWORD} psql -h db -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'CREATE EXTENSION IF NOT EXISTS vector;' &&
+        echo 'Running migrations...' &&
+        alembic upgrade head &&
+        echo 'Starting server...' &&
+        uvicorn app.main:app --host 0.0.0.0 --port 8000
+      "
 
 volumes:
   newproject_db_data:
