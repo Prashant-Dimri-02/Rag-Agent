@@ -6,14 +6,10 @@ import asyncio
 
 
 from app.models.chat import Chat
-from app.models.support_alert import SupportAlert
+from app.models.session import ConversationSession
 from app.services.embedding_service import EmbeddingService
 from app.services.vector_search import search_similar_chunks
 from app.services.websocket_manager import WebSocketManager
-from app.services.support_service import create_alert_for_chat
-
-
-
 
 class QAService:
     def __init__(self, db: Session):
@@ -22,11 +18,11 @@ class QAService:
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
-    def _is_taken_over(self, user_id: int) -> bool:
-        return self.db.query(Chat).filter(Chat.user_id == user_id, Chat.taken_over == True).first() is not None
+    def _is_taken_over(self, sess_id: int) -> bool:
+        return self.db.query(Chat).filter(Chat.sess_id == sess_id, Chat.needs_human == True).first() is not None
     
-    def _save_message(self, user_id: int, sender: str, message: str):
-        chat = Chat(user_id=user_id, sender=sender, message=message)
+    def _save_message(self, sess_id: int, sender: str, message: str,needs_human: bool = False) -> Chat:
+        chat = Chat(sess_id=sess_id, sender=sender, message=message, needs_human=needs_human)
         self.db.add(chat)
         self.db.commit()
         self.db.refresh(chat)
@@ -40,13 +36,13 @@ class QAService:
         return low in ["i don't know.", "i dont know", "i'm not sure."]
 
 
-    async def ask(self, question: str, user_id: int) -> str:
-        if user_id is None:
-            raise ValueError("user_id must not be None")
-
+    async def ask(self, question: str, sess_id: int) -> str:
+        if sess_id is None:
+            raise ValueError("sess_id must not be None")
+    
 
         # 1) stop if agent already took over
-        if self._is_taken_over(user_id):
+        if self._is_taken_over(sess_id):
             return "A human support agent is handling your chat now."
 
 
@@ -56,7 +52,7 @@ class QAService:
 
 
         # save user message
-        self._save_message(user_id, "user", question)
+        self._save_message(sess_id, "user", question)
 
 
         # embeddings + KB search
@@ -71,7 +67,7 @@ class QAService:
 
 
         # previous conversation (only this user's history)
-        previous_chats = self.db.query(Chat).filter(Chat.user_id == user_id).order_by(Chat.created_at.asc()).all()
+        previous_chats = self.db.query(Chat).filter(Chat.sess_id == sess_id).order_by(Chat.created_at.asc()).all()
         for chat in previous_chats:
             role = "user" if chat.sender == "user" else "assistant"
             messages.append({"role": role, "content": chat.message})
@@ -87,26 +83,36 @@ class QAService:
 
         # 6) detect inability and trigger human alert
         if self._bot_does_not_know(answer):
-            # mark conversation rows as needs_human
-            self.db.query(Chat).filter(Chat.user_id == user_id).update({"needs_human": True})
+            
+            # save chats needs human flag
+            self._save_message(sess_id, "bot", answer, needs_human=True)
+             # Create Session
+            session = ConversationSession(
+                    sess_id=sess_id,
+                    status="pending_agent"
+                )
+            self.db.add(session)
             self.db.commit()
-            # create support alert row and broadcast
-            alert = create_alert_for_chat(self.db, None, user_id)
 
+            # 3️⃣ Notify agents in real-time
+            await WebSocketManager.broadcast_to_agents({
+                "type": "NEW_ALERT",
+                "sess_id": sess_id,
+                "session_id": session.id
+            })
 
-            # notify user via websocket that a human has been alerted
+            # 4️⃣ Notify user
             await WebSocketManager.send_to_user(
-                user_id,
+                sess_id,
                 {
                     "type": "human_alert",
-                    "message": "A human agent has been notified."
+                    "message": "Unfortunately I don't know the answer to this question. A human agent has been notified."
                 }
             )
-
-
-            return "I’m not sure about this. I’ve notified a human agent 👨‍💻"
+            return "Unfortunately I don't know the answer to this question. A human agent has been notified."
+            
 
 
         # 7) save bot answer and return
-        self._save_message(user_id, "bot", answer)
+        self._save_message(sess_id, "bot", answer)
         return answer

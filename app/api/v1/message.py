@@ -6,21 +6,21 @@ from app.models.chat import Chat
 router = APIRouter()
 
 
-@router.get("/messages{user_id}")
-def get_messages(user_id: int, db: Session = Depends(get_db)):
+@router.get("/messages/{sess_id}")
+def get_messages(sess_id: int, db: Session = Depends(get_db)):
     chats = (
         db.query(Chat)
-        .filter(Chat.user_id == user_id)
+        .filter(Chat.sess_id == sess_id)
         .order_by(Chat.created_at.asc())
         .all()
     )
 
     return [
-        {"role": "user", "content": chat.question}
+        {
+            "role": chat.sender,   # user / bot / agent
+            "content": chat.message,
+            "needs_human": chat.needs_human
+        }
         for chat in chats
-        for _ in (0,)
-    ] + [
-        {"role": "assistant", "content": chat.answer}
-        for chat in chats
-        for _ in (0,)
     ]
+

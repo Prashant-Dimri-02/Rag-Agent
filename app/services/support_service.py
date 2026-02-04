@@ -2,43 +2,33 @@
 from sqlalchemy.orm import Session
 from typing import List
 from app.models.chat import Chat
-from app.models.support_alert import SupportAlert
 from app.services.websocket_manager import WebSocketManager
+from app.models.session import ConversationSession
+from datetime import datetime
 
 
 
+def take_over_conversation(db: Session, sess_id: int, agent_id: int):
 
-def list_pending_alerts(db: Session) -> List[SupportAlert]:
-    return db.query(SupportAlert).filter(SupportAlert.resolved == False).all()
+    session = db.query(ConversationSession)\
+        .filter(ConversationSession.sess_id == sess_id)\
+        .with_for_update()\
+        .first()
 
+    if not session:
+        raise Exception("Conversation session not found")
 
+    if session.status == "agent_active":
+        raise Exception("Conversation already assigned to another agent")
 
+    session.status = "agent_active"
+    session.assigned_agent_id = agent_id
+    session.assigned_at = datetime.utcnow()
 
-def create_alert_for_chat(db: Session, chat_id: int, user_id: int) -> SupportAlert:
-    alert = SupportAlert(chat_id=chat_id, user_id=user_id)
-    db.add(alert)
     db.commit()
-    db.refresh(alert)
-    # notify agents in real-time
-    WebSocketManager.broadcast_to_agents({"type": "NEW_ALERT", "user_id": user_id, "chat_id": chat_id})
-    return alert
+    db.refresh(session)
 
-
-
-
-def take_over_chat(db: Session, user_id: int, agent_id: int):
-    # mark all chat rows for this user as taken_over
-    db.query(Chat).filter(Chat.user_id == user_id).update({
-    "taken_over": True,
-    "taken_over_by": agent_id,
-    "needs_human": False,
-    })
-    # resolve any alerts
-    db.query(SupportAlert).filter(SupportAlert.user_id == user_id, SupportAlert.resolved == False).update({"resolved": True})
-    db.commit()
-
-
-
+    return session
 
 def agent_reply(db: Session, user_id: int, agent_id: int, message: str):
     # create agent message row

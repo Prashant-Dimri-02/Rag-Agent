@@ -6,6 +6,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from app.api.v1.websocket import router as websocket_router
 
 from app.core.logging import configure_logging
 from app.core.config import settings
@@ -28,7 +29,7 @@ os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 app.include_router(api_router, prefix="/api")
-
+app.include_router(websocket_router)
 
 @app.on_event("startup")
 def startup_event():

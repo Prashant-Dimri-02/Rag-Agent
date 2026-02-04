@@ -3,30 +3,44 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from app.core.dependencies import get_db
-from app.services.support_service import list_pending_alerts, take_over_chat, agent_reply
-from app.schemas.support import SupportAlertOut
+from app.services.support_service import take_over_conversation, agent_reply
+from app.services.websocket_manager import WebSocketManager
 
 
 router = APIRouter()
 
 
 
+@router.post("/takeover")
+async def take_over_chat(
+    sess_id: int,
+    agent_id: int,
+    db: Session = Depends(get_db)
+):
+    try:
+        
+        session = take_over_conversation(db, sess_id, agent_id)
 
-@router.get("/pending", response_model=List[SupportAlertOut])
-def pending_alerts(db: Session = Depends(get_db)):
-    alerts = list_pending_alerts(db)
-    return alerts
+        # Notify user that agent joined
+        await WebSocketManager.send_to_user(
+            sess_id,  # assuming sess_id maps to websocket user key
+            {
+                "type": "agent_joined",
+                "message": "A support agent has joined the chat.",
+                "agent_id": agent_id
+            }
+        )
 
+        return {
+            "success": True,
+            "message": "Conversation assigned successfully",
+            "sess_id": session.sess_id,
+            "assigned_agent_id": session.assigned_agent_id,
+            "status": session.status
+        }
 
-
-
-@router.post("/takeover/{user_id}")
-def takeover(user_id: int, agent_id: int, db: Session = Depends(get_db)):
-    take_over_chat(db, user_id, agent_id)
-    return {"ok": True}
-
-
-
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/reply/{user_id}")
 def reply(user_id: int, agent_id: int, message: str, db: Session = Depends(get_db)):

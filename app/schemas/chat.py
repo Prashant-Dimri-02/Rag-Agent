@@ -1,6 +1,6 @@
 # app/schemas/chat.py
 from pydantic import BaseModel
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 
 
@@ -25,3 +25,23 @@ class MessageOut(BaseModel):
 
     class Config:
         orm_mode = True
+        
+        
+        
+class ChatSummaryResponse(BaseModel):
+    sess_id: int
+    session_id: str
+    start_time: datetime
+    duration_seconds: int
+    type: str
+    status: str
+
+    class Config:
+        from_attributes = True
+        
+
+class ChatSummaryListResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    data: List[ChatSummaryResponse]

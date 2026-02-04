@@ -6,6 +6,8 @@ from app.models.file_embedding import FileEmbedding
 from app.models.uploaded_file import UploadedFile
 from app.models.user import User
 import os
+from app.models.chat import Chat
+from app.models.session import ConversationSession
 from sqlalchemy import create_engine
 from app.models.refresh_token import RefreshToken
 

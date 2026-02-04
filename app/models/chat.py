@@ -14,7 +14,7 @@ class Chat(Base):
 
 
     # the owner of the conversation (user who started the chat)
-    user_id = Column(BigInteger, nullable=True, index=True)
+    sess_id = Column(BigInteger, nullable=True, index=True)
 
 
     # who sent this message: 'user' | 'bot' | 'agent'
@@ -31,8 +31,6 @@ class Chat(Base):
 
     # takeover state for the conversation (set on messages rows as well)
     needs_human = Column(Boolean, default=False)
-    taken_over = Column(Boolean, default=False)
-    taken_over_by = Column(Integer, nullable=True)
 
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
