@@ -21,8 +21,9 @@ class QAService:
     def _is_taken_over(self, sess_id: int) -> bool:
         return self.db.query(Chat).filter(Chat.sess_id == sess_id, Chat.needs_human == True).first() is not None
     
-    def _save_message(self, sess_id: int, sender: str, message: str,needs_human: bool = False) -> Chat:
-        chat = Chat(sess_id=sess_id, sender=sender, message=message, needs_human=needs_human)
+    def _save_message(self, sess_id: int, sender: str, message: str,needs_human: bool = False,prompt_tokens: int = 0,
+    completion_tokens: int = 0,total_tokens: int = 0,) -> Chat:
+        chat = Chat(sess_id=sess_id, sender=sender, message=message, needs_human=needs_human, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens)
         self.db.add(chat)
         self.db.commit()
         self.db.refresh(chat)
@@ -56,7 +57,7 @@ class QAService:
 
 
         # embeddings + KB search
-        query_embedding = self.embedding_service.create_embedding(question)
+        query_embedding, embedding_tokens = self.embedding_service.create_embedding(question)
         kb_chunks = search_similar_chunks(db=self.db, query_embedding=query_embedding, top_k=5)
 
 
@@ -78,6 +79,10 @@ class QAService:
 
         # 5) call OpenAI
         response = self.client.chat.completions.create(model="gpt-4o-mini", messages=messages)
+        usage = response.usage
+        prompt_tokens = usage.prompt_tokens
+        completion_tokens = usage.completion_tokens
+        total_tokens = usage.total_tokens
         answer = response.choices[0].message.content.strip()
 
 
@@ -85,7 +90,7 @@ class QAService:
         if self._bot_does_not_know(answer):
             
             # save chats needs human flag
-            self._save_message(sess_id, "bot", answer, needs_human=True)
+            self._save_message(sess_id, "bot", answer, needs_human=True, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens)
              # Create Session
             session = ConversationSession(
                     sess_id=sess_id,
@@ -114,5 +119,5 @@ class QAService:
 
 
         # 7) save bot answer and return
-        self._save_message(sess_id, "bot", answer)
+        self._save_message(sess_id, "bot", answer, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, total_tokens=total_tokens)
         return answer

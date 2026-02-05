@@ -51,7 +51,7 @@ class BuildService:
         chunks = self.wks._chunk_text(text_content)
         print(chunks,"---chunks---")
         for chunk in chunks:
-            embedding_vector = self.embedding_service.create_embedding(chunk)
+            embedding_vector, tokens_used = self.embedding_service.create_embedding(chunk)
 
             if not embedding_vector:
                 continue
@@ -61,6 +61,7 @@ class BuildService:
                 embedding=embedding_vector,
                 text_content=chunk,
                 source_type="file",
+                embedding_tokens=tokens_used,
             )
 
             self.db.add(db_embedding)

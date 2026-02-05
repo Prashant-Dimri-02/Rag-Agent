@@ -1,9 +1,9 @@
+import random
 from sqlalchemy.orm import Session
 from app.models.file_embedding import FileEmbedding
 from app.services.embedding_service import EmbeddingService
 from app.services.web_scraper import scrape_website_text
 import tiktoken
-import uuid
 
 
 class WebsiteKBService:
@@ -32,9 +32,10 @@ class WebsiteKBService:
 
         inserted_rows = 0
 
+        generated_url_id = random.getrandbits(63)
         # 3) Embed + store EACH chunk
         for idx, chunk in enumerate(chunks):
-            embedding_vector = self.embedding_service.create_embedding(chunk)
+            embedding_vector, tokens_used = self.embedding_service.create_embedding(chunk)
 
             if not embedding_vector:
                 continue  # skip failed chunks safely
@@ -43,6 +44,8 @@ class WebsiteKBService:
                 embedding=embedding_vector,
                 text_content=chunk,
                 source_type="kb_url",
+                url_id=generated_url_id if idx == 0 else None,  # ✅ only first chunk
+                embedding_tokens=tokens_used,
             )
 
             self.db.add(db_embedding)

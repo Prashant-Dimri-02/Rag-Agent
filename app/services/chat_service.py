@@ -39,11 +39,21 @@ def get_all_chat_summaries(
     # Filters
     # ----------------------------
 
-    # Session ID filter
+    # ✅ Session ID filter (supports both formats)
     if session_id:
         if session_id.startswith("SESS-"):
-            sess_id = session_id.replace("SESS-", "")
-            query = query.where(subquery.c.sess_id == int(sess_id))
+            session_id = session_id.replace("SESS-", "")
+
+        try:
+            query = query.where(subquery.c.sess_id == int(session_id))
+        except ValueError:
+            # invalid session_id format
+            return {
+                "total": 0,
+                "skip": skip,
+                "limit": limit,
+                "data": []
+            }
 
     # Type filter
     if type:

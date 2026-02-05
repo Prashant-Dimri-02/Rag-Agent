@@ -1,6 +1,6 @@
 # app/api/api_router.py
 from fastapi import APIRouter
-from app.api.v1 import auth,upload, knowledge_base, website_kb, message,qa
+from app.api.v1 import auth,upload, knowledge_base, website_kb, message,qa,dashboard
 from app.api.v1 import websocket as websocket_router
 from app.api.v1 import support as support_router
 from app.api.v1 import chat
@@ -15,6 +15,7 @@ api_router.include_router(message.router, prefix="/v1", tags=["messages"])
 api_router.include_router(qa.router, prefix="/v1", tags=["qa"])
 api_router.include_router(chat.router, prefix="/v1", tags=["chat"])
 api_router.include_router(support_alert.router, prefix="/v1", tags=["support_alert"])
+api_router.include_router(dashboard.router, prefix="/v1", tags=["dashboard"])
 # WebSocket endpoints (no prefix)
 api_router.include_router(websocket_router.router)
 

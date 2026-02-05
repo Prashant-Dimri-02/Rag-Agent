@@ -13,5 +13,6 @@ class EmbeddingService:
             model="text-embedding-3-small",
             input=text
         )
-
-        return response.data[0].embedding
+        tokens = response.usage.total_tokens
+        
+        return response.data[0].embedding,tokens

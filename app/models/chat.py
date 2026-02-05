@@ -31,6 +31,8 @@ class Chat(Base):
 
     # takeover state for the conversation (set on messages rows as well)
     needs_human = Column(Boolean, default=False)
-
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

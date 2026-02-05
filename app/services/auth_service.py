@@ -34,7 +34,8 @@ class AuthService:
         rt = models.refresh_token.RefreshToken(user_id=user.id, token=refresh)
         self.db.add(rt)
         self.db.commit()
-        return {"access_token": access, "token_type": "bearer", "refresh_token": refresh , "user_id": user.id}   
+        return {"access_token": access, "token_type": "bearer", "refresh_token": refresh , "user_id": user.id,
+                "user_name": user.full_name}   
 
     def list_users(self):
         return self.db.query(models.user.User).all()
