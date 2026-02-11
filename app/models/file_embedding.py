@@ -20,3 +20,4 @@ class FileEmbedding(Base):
     source_type = Column(String(50), nullable=True, default="file")
     embedding_tokens = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    source_url = Column(Text, nullable=True)

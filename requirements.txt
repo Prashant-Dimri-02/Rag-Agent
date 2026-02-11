@@ -32,3 +32,7 @@ requests
 tiktoken
 pgvector
 python-dotenv
+
+# 🔵 Added for Website Scraping (NEW)
+cloudscraper
+playwright

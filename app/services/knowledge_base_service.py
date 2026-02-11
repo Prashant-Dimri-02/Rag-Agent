@@ -1,4 +1,3 @@
-import re
 from typing import Optional
 import random
 from sqlalchemy.orm import Session
@@ -15,7 +14,7 @@ class KnowledgeBaseService:
         self.embedding_service = EmbeddingService()
 
     # =========================================================
-    # ADD QA TO KNOWLEDGE BASE
+    # ADD QA
     # =========================================================
     def add_qa(self, question: str, answer: str) -> dict:
         question = question.strip()
@@ -34,7 +33,6 @@ class KnowledgeBaseService:
         generated_qa_id = random.getrandbits(63)
 
         db_embedding = FileEmbedding(
-            file_id=None,
             embedding=embedding_vector,
             text_content=combined_text,
             source_type="kb_qa",
@@ -54,7 +52,7 @@ class KnowledgeBaseService:
         }
 
     # =========================================================
-    # GET KNOWLEDGE BASE WITH PAGINATION + FILTERS
+    # GET KNOWLEDGE BASE
     # =========================================================
     def get_knowledge_base(
         self,
@@ -68,7 +66,7 @@ class KnowledgeBaseService:
             query = query.filter(FileEmbedding.source_type == source_type)
 
         # =========================================================
-        # KB_QA → DISTINCT ON qa_id (PostgreSQL)
+        # KB_QA
         # =========================================================
         if source_type == "kb_qa":
 
@@ -89,15 +87,15 @@ class KnowledgeBaseService:
                 .all()
             )
 
-            results = []
-
-            for emb in embeddings:
-                results.append({
+            results = [
+                {
                     "qa_id": emb.qa_id,
                     "text_content": emb.text_content,
                     "created_at": emb.created_at,
                     "source_type": "qa"
-                })
+                }
+                for emb in embeddings
+            ]
 
             return {
                 "total": total,
@@ -107,7 +105,7 @@ class KnowledgeBaseService:
             }
 
         # =========================================================
-        # KB_URL → DISTINCT ON url_id (PostgreSQL)
+        # KB_URL (FIXED — no regex)
         # =========================================================
         if source_type == "kb_url":
 
@@ -120,30 +118,23 @@ class KnowledgeBaseService:
 
             embeddings = (
                 self.db.query(FileEmbedding)
-                .filter(FileEmbedding.url_id != None)
-                .order_by(FileEmbedding.url_id, desc(FileEmbedding.created_at))
-                .distinct(FileEmbedding.url_id)
+                .filter(FileEmbedding.source_type == "kb_url")
+                .filter(FileEmbedding.source_url != None)  # ✅ only first chunk rows
+                .order_by(desc(FileEmbedding.created_at))
                 .offset((page - 1) * page_size)
                 .limit(page_size)
                 .all()
             )
 
-            results = []
-
-            for emb in embeddings:
-                url_match = re.search(
-                r"Source URL:\s*(https?://\S+)",
-                emb.text_content or ""
-                        )
-
-                clean_url = url_match.group(1) if url_match else None
-
-                results.append({
+            results = [
+                {
                     "url_id": emb.url_id,
-                    "source_url": clean_url,   # cleaner field name
+                    "source_url": emb.source_url,
                     "created_at": emb.created_at,
                     "source_type": "url"
-                })
+                }
+                for emb in embeddings
+            ]
 
             return {
                 "total": total,
@@ -151,10 +142,12 @@ class KnowledgeBaseService:
                 "page_size": page_size,
                 "items": results
             }
+
+        # =========================================================
+        # FILE
+        # =========================================================
         if source_type == "file":
-            # =========================================================
-            # FILE (UNCHANGED – FULL METADATA RETURNED)
-            # =========================================================
+
             total = query.count()
 
             embeddings = (
