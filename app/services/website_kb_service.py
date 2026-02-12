@@ -1,7 +1,9 @@
+# app/services/website_kb_service.py
+
 import random
-import requests
 import tiktoken
-import cloudscraper
+from urllib.parse import urljoin, urlparse
+from collections import deque
 
 from sqlalchemy.orm import Session
 from bs4 import BeautifulSoup
@@ -17,21 +19,23 @@ class WebsiteKBService:
         self.embedding_service = EmbeddingService()
 
     # =========================================================
-    # ADD WEBSITE TO KNOWLEDGE BASE
+    # ADD WEBSITE (WITH INTERNAL CRAWLING)
     # =========================================================
-    def add_website(self, url: str):
+    def add_website(self, url: str, max_pages: int = 50, max_depth: int = 3):
         url = url.strip()
         if not url:
             raise ValueError("URL is required")
 
-        # 1️⃣ Scrape website
-        text_content = self._scrape_website_text(url)
+        crawled_text = self._crawl_website(
+            base_url=url,
+            max_pages=max_pages,
+            max_depth=max_depth,
+        )
 
-        if not text_content.strip():
+        if not crawled_text.strip():
             raise RuntimeError("No content extracted from website")
 
-        # 2️⃣ Chunk text
-        chunks = self._chunk_text(text_content)
+        chunks = self._chunk_text(crawled_text)
 
         if not chunks:
             raise RuntimeError("Failed to chunk website content")
@@ -40,9 +44,6 @@ class WebsiteKBService:
         generated_url_id = random.getrandbits(63)
 
         for idx, chunk in enumerate(chunks):
-            if not chunk.strip():
-                continue
-
             embedding_vector, tokens_used = self.embedding_service.create_embedding(chunk)
 
             if not embedding_vector:
@@ -53,7 +54,7 @@ class WebsiteKBService:
                 text_content=chunk,
                 source_type="kb_url",
                 url_id=generated_url_id,
-                source_url=url if idx == 0 else None,  # ✅ only first row stores actual URL
+                source_url=url if idx == 0 else None,
                 embedding_tokens=tokens_used,
             )
 
@@ -65,61 +66,95 @@ class WebsiteKBService:
         return {
             "url": url,
             "url_id": generated_url_id,
+            "pages_crawled": len(chunks),
             "chunks_created": len(chunks),
             "rows_inserted": inserted_rows,
-            "total_text_length": len(text_content),
+            "total_text_length": len(crawled_text),
         }
 
     # =========================================================
-    # SCRAPING STRATEGY
+    # REAL INTERNAL CRAWLER
     # =========================================================
-    def _scrape_website_text(self, url: str) -> str:
-        try:
-            return self._scrape_with_requests(url)
-        except Exception:
-            try:
-                return self._scrape_with_cloudscraper(url)
-            except Exception:
-                return self._scrape_with_playwright(url)
+    def _crawl_website(self, base_url: str, max_pages: int, max_depth: int) -> str:
+        visited = set()
+        queue = deque()
+        queue.append((base_url, 0))
 
-    def _scrape_with_requests(self, url: str) -> str:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-        }
+        base_domain = urlparse(base_url).netloc
 
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        return self._extract_text(response.text)
+        collected_text = []
 
-    def _scrape_with_cloudscraper(self, url: str) -> str:
-        scraper = cloudscraper.create_scraper()
-        response = scraper.get(url, timeout=20)
-        response.raise_for_status()
-        return self._extract_text(response.text)
-
-    def _scrape_with_playwright(self, url: str) -> str:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(url, timeout=60000)
-            page.wait_for_timeout(3000)
-            content = page.content()
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
+                )
+            )
+
+            page = context.new_page()
+
+            while queue and len(visited) < max_pages:
+                current_url, depth = queue.popleft()
+
+                if current_url in visited:
+                    continue
+
+                if depth > max_depth:
+                    continue
+
+                try:
+                    page.goto(current_url, wait_until="networkidle", timeout=60000)
+                    page.wait_for_timeout(2000)
+
+                    html = page.content()
+                    text = self._extract_text(html)
+
+                    if text.strip():
+                        collected_text.append(text)
+
+                    visited.add(current_url)
+
+                    # extract internal links
+                    soup = BeautifulSoup(html, "html.parser")
+                    for link in soup.find_all("a", href=True):
+                        href = link["href"]
+
+                        full_url = urljoin(current_url, href)
+                        parsed = urlparse(full_url)
+
+                        if parsed.netloc == base_domain:
+                            clean_url = parsed.scheme + "://" + parsed.netloc + parsed.path
+                            if clean_url not in visited:
+                                queue.append((clean_url, depth + 1))
+
+                except Exception:
+                    continue
+
+            context.close()
             browser.close()
 
-        return self._extract_text(content)
+        return "\n\n".join(collected_text)
 
+    # =========================================================
+    # TEXT CLEANER
+    # =========================================================
     def _extract_text(self, html: str) -> str:
         soup = BeautifulSoup(html, "html.parser")
 
-        for tag in soup(["script", "style", "noscript"]):
+        for tag in soup(["script", "style", "noscript", "header", "footer", "nav", "aside"]):
             tag.decompose()
 
-        text = soup.get_text(separator=" ", strip=True)
-        return " ".join(text.split())
+        text = soup.get_text(separator="\n")
+        lines = [line.strip() for line in text.splitlines()]
+        lines = [line for line in lines if len(line) > 25]
+
+        return "\n".join(lines)
 
     # =========================================================
     # TOKEN CHUNKING
