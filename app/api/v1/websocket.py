@@ -18,8 +18,6 @@ async def user_ws(websocket: WebSocket, sess_id: int):
 
     await WebSocketManager.connect_user(sess_id, websocket)
 
-    db = SessionLocal()  # ✅ Create ONE session per WebSocket
-
     try:
         while True:
             data = await websocket.receive_json()
@@ -29,23 +27,26 @@ async def user_ws(websocket: WebSocket, sess_id: int):
                 if not message:
                     continue
 
-                # Save user message
-                chat = Chat(
-                    sess_id=sess_id,
-                    sender="user",
-                    message=message
-                )
-                db.add(chat)
-                db.commit()
+                db = SessionLocal()
+                try:
+                    # Save user message
+                    chat = Chat(
+                        sess_id=sess_id,
+                        sender="user",
+                        message=message
+                    )
+                    db.add(chat)
+                    db.commit()
 
-                # Check if conversation assigned
-                session = (
-                    db.query(ConversationSession)
-                    .filter(ConversationSession.sess_id == sess_id)
-                    .first()
-                )
+                    # Check if conversation is assigned
+                    session = db.query(ConversationSession)\
+                        .filter(ConversationSession.sess_id == sess_id)\
+                        .first()
 
-                # Forward only if agent active
+                finally:
+                    db.close()
+
+                # ✅ ONLY forward if agent already took over
                 if session and session.status == "agent_active":
                     await WebSocketManager.send_to_agent(
                         session.assigned_agent_id,
@@ -56,119 +57,122 @@ async def user_ws(websocket: WebSocket, sess_id: int):
                         }
                     )
 
+                # ❌ No broadcasting
+                # ❌ No sending to unassigned agents
+
     except WebSocketDisconnect:
-        pass
-    finally:
-        db.close()  # ✅ Close when socket disconnects
         WebSocketManager.disconnect(websocket)
 
 
 # ==============================
 # AGENT WEBSOCKET
 # ==============================
-
 @router.websocket("/ws/agent/{agent_id}")
 async def agent_ws(websocket: WebSocket, agent_id: int):
 
     await WebSocketManager.connect_agent(agent_id, websocket)
-
-    db = SessionLocal()  # ✅ Create ONE session per WebSocket
 
     try:
         while True:
             data = await websocket.receive_json()
             typ = data.get("type")
 
-            # ========================
-            # TAKEOVER
-            # ========================
-            if typ == "takeover":
+            db = SessionLocal()
+            try:
 
-                sess_id = data.get("sess_id")
+                # ========================
+                # TAKEOVER
+                # ========================
+                if typ == "takeover":
 
-                session = (
-                    db.query(ConversationSession)
-                    .filter(ConversationSession.sess_id == sess_id)
-                    .with_for_update()
-                    .first()
-                )
+                    sess_id = data.get("sess_id")
 
-                if not session:
+                    session = (
+                        db.query(ConversationSession)
+                        .filter(ConversationSession.sess_id == sess_id)
+                        .with_for_update()
+                        .first()
+                    )
+
+                    if not session:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Session not found"
+                        })
+                        continue
+
+                    if session.assigned_agent_id:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Already assigned to another agent"
+                        })
+                        continue
+
+                    session.status = "agent_active"
+                    session.assigned_agent_id = agent_id
+                    db.commit()
+
                     await websocket.send_json({
-                        "type": "error",
-                        "message": "Session not found"
+                        "type": "ok",
+                        "action": "taken_over",
+                        "sess_id": sess_id
                     })
-                    continue
 
-                if session.assigned_agent_id:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Already assigned to another agent"
-                    })
-                    continue
+                    # Notify user
+                    await WebSocketManager.send_to_user(
+                        sess_id,
+                        {
+                            "type": "agent_joined",
+                            "agent_id": agent_id,
+                            "message": "A support agent has joined the chat."
+                        }
+                    )
 
-                session.status = "agent_active"
-                session.assigned_agent_id = agent_id
-                db.commit()
+                # ========================
+                # AGENT REPLY
+                # ========================
+                elif typ == "reply":
 
-                await websocket.send_json({
-                    "type": "ok",
-                    "action": "taken_over",
-                    "sess_id": sess_id
-                })
+                    sess_id = data.get("sess_id")
+                    message = data.get("message", "").strip()
 
-                await WebSocketManager.send_to_user(
-                    sess_id,
-                    {
-                        "type": "agent_joined",
-                        "agent_id": agent_id,
-                        "message": "A support agent has joined the chat."
-                    }
-                )
+                    if not message:
+                        continue
 
-            # ========================
-            # AGENT REPLY
-            # ========================
-            elif typ == "reply":
+                    session = (
+                        db.query(ConversationSession)
+                        .filter(ConversationSession.sess_id == sess_id)
+                        .first()
+                    )
 
-                sess_id = data.get("sess_id")
-                message = data.get("message", "").strip()
+                    if not session or session.assigned_agent_id != agent_id:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Not authorized for this conversation"
+                        })
+                        continue
 
-                if not message:
-                    continue
+                    # Save agent message (FIXED HERE)
+                    chat = Chat(
+                        sess_id=sess_id,   # ✅ FIXED
+                        sender="agent",
+                        message=message
+                    )
+                    db.add(chat)
+                    db.commit()
 
-                session = (
-                    db.query(ConversationSession)
-                    .filter(ConversationSession.sess_id == sess_id)
-                    .first()
-                )
+                    # Send to user
+                    await WebSocketManager.send_to_user(
+                        sess_id,
+                        {
+                            "type": "agent_message",
+                            "message": message,
+                            "agent_id": agent_id
+                        }
+                    )
 
-                if not session or session.assigned_agent_id != agent_id:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Not authorized for this conversation"
-                    })
-                    continue
-
-                chat = Chat(
-                    sess_id=sess_id,
-                    sender="agent",
-                    message=message
-                )
-                db.add(chat)
-                db.commit()
-
-                await WebSocketManager.send_to_user(
-                    sess_id,
-                    {
-                        "type": "agent_message",
-                        "message": message,
-                        "agent_id": agent_id
-                    }
-                )
+            finally:
+                db.close()
 
     except WebSocketDisconnect:
-        pass
-    finally:
-        db.close()  # ✅ Close once when socket closes
         WebSocketManager.disconnect(websocket)

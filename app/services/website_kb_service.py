@@ -1,20 +1,16 @@
 # app/services/website_kb_service.py
 
 import random
-import logging
 import tiktoken
 from urllib.parse import urljoin, urlparse
 from collections import deque
 
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 
 from app.models.file_embedding import FileEmbedding
 from app.services.embedding_service import EmbeddingService
-
-logger = logging.getLogger(__name__)
 
 
 class WebsiteKBService:
@@ -27,11 +23,8 @@ class WebsiteKBService:
     # =========================================================
     def add_website(self, url: str, max_pages: int = 50, max_depth: int = 3):
         url = url.strip()
-
         if not url:
             raise ValueError("URL is required")
-
-        logger.info(f"Starting crawl for: {url}")
 
         crawled_text = self._crawl_website(
             base_url=url,
@@ -50,53 +43,37 @@ class WebsiteKBService:
         inserted_rows = 0
         generated_url_id = random.getrandbits(63)
 
-        BATCH_SIZE = 20
+        for idx, chunk in enumerate(chunks):
+            embedding_vector, tokens_used = self.embedding_service.create_embedding(chunk)
 
-        try:
-            for idx, chunk in enumerate(chunks):
-                embedding_vector, tokens_used = self.embedding_service.create_embedding(chunk)
+            if not embedding_vector:
+                continue
 
-                if not embedding_vector:
-                    continue
+            db_embedding = FileEmbedding(
+                embedding=embedding_vector,
+                text_content=chunk,
+                source_type="kb_url",
+                url_id=generated_url_id,
+                source_url=url if idx == 0 else None,
+                embedding_tokens=tokens_used,
+            )
 
-                db_embedding = FileEmbedding(
-                    embedding=embedding_vector,
-                    text_content=chunk,
-                    source_type="kb_url",
-                    url_id=generated_url_id,
-                    source_url=url if idx == 0 else None,
-                    embedding_tokens=tokens_used,
-                )
+            self.db.add(db_embedding)
+            inserted_rows += 1
 
-                self.db.add(db_embedding)
-                inserted_rows += 1
-
-                # Commit in batches to prevent memory growth
-                if (idx + 1) % BATCH_SIZE == 0:
-                    self.db.commit()
-                    self.db.expunge_all()
-                    logger.info(f"Committed batch up to chunk {idx+1}")
-
-            self.db.commit()
-            self.db.expunge_all()
-
-        except SQLAlchemyError as e:
-            logger.error(f"Database error: {str(e)}")
-            self.db.rollback()
-            raise
-
-        logger.info(f"Completed crawl for {url}")
+        self.db.commit()
 
         return {
             "url": url,
             "url_id": generated_url_id,
+            "pages_crawled": len(chunks),
             "chunks_created": len(chunks),
             "rows_inserted": inserted_rows,
             "total_text_length": len(crawled_text),
         }
 
     # =========================================================
-    # INTERNAL CRAWLER (SAFE VERSION)
+    # REAL INTERNAL CRAWLER
     # =========================================================
     def _crawl_website(self, base_url: str, max_pages: int, max_depth: int) -> str:
         visited = set()
@@ -104,80 +81,63 @@ class WebsiteKBService:
         queue.append((base_url, 0))
 
         base_domain = urlparse(base_url).netloc
+
         collected_text = []
 
         with sync_playwright() as p:
-            browser = None
-            context = None
-
-            try:
-                browser = p.chromium.launch(
-                    headless=True,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"]
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/120.0.0.0 Safari/537.36"
                 )
+            )
 
-                context = browser.new_context(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
-                    )
-                )
+            page = context.new_page()
 
-                page = context.new_page()
+            while queue and len(visited) < max_pages:
+                current_url, depth = queue.popleft()
 
-                while queue and len(visited) < max_pages:
-                    current_url, depth = queue.popleft()
+                if current_url in visited:
+                    continue
 
-                    if current_url in visited:
-                        continue
-
-                    if depth > max_depth:
-                        continue
-
-                    try:
-                        logger.info(f"Crawling: {current_url}")
-
-                        page.goto(current_url, wait_until="domcontentloaded", timeout=30000)
-
-                        page.wait_for_timeout(2000)
-
-                        html = page.content()
-                        text = self._extract_text(html)
-
-                        if text.strip():
-                            collected_text.append(text)
-
-                        visited.add(current_url)
-
-                        soup = BeautifulSoup(html, "html.parser")
-
-                        for link in soup.find_all("a", href=True):
-                            href = link["href"]
-                            full_url = urljoin(current_url, href)
-                            parsed = urlparse(full_url)
-
-                            if parsed.netloc == base_domain:
-                                clean_url = parsed.scheme + "://" + parsed.netloc + parsed.path
-                                if clean_url not in visited:
-                                    queue.append((clean_url, depth + 1))
-
-                    except Exception as e:
-                        logger.warning(f"Failed page {current_url}: {str(e)}")
-                        continue
-
-            finally:
-                try:
-                    if context:
-                        context.close()
-                except Exception:
-                    pass
+                if depth > max_depth:
+                    continue
 
                 try:
-                    if browser:
-                        browser.close()
+                    page.goto(current_url, wait_until="networkidle", timeout=60000)
+                    page.wait_for_timeout(2000)
+
+                    html = page.content()
+                    text = self._extract_text(html)
+
+                    if text.strip():
+                        collected_text.append(text)
+
+                    visited.add(current_url)
+
+                    # extract internal links
+                    soup = BeautifulSoup(html, "html.parser")
+                    for link in soup.find_all("a", href=True):
+                        href = link["href"]
+
+                        full_url = urljoin(current_url, href)
+                        parsed = urlparse(full_url)
+
+                        if parsed.netloc == base_domain:
+                            clean_url = parsed.scheme + "://" + parsed.netloc + parsed.path
+                            if clean_url not in visited:
+                                queue.append((clean_url, depth + 1))
+
                 except Exception:
-                    pass
+                    continue
+
+            context.close()
+            browser.close()
 
         return "\n\n".join(collected_text)
 
