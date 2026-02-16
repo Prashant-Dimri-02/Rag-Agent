@@ -3,7 +3,7 @@
 from typing import Optional
 import random
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.models.file_embedding import FileEmbedding
 from app.models.uploaded_file import UploadedFile
@@ -146,46 +146,50 @@ class KnowledgeBaseService:
             }
 
         # =========================================================
-        # FILE
+        # FILE (FIXED — distinct file_id)
         # =========================================================
         if source_type == "file":
 
-            total = query.count()
+            # Count distinct files
+            total = (
+                self.db.query(FileEmbedding.file_id)
+                .filter(FileEmbedding.file_id != None)
+                .distinct()
+                .count()
+            )
 
-            embeddings = (
-                query.order_by(desc(FileEmbedding.created_at))
+            # Subquery to get latest embedding per file
+            subquery = (
+                self.db.query(
+                    FileEmbedding.file_id,
+                    func.max(FileEmbedding.created_at).label("latest_created_at")
+                )
+                .filter(FileEmbedding.file_id != None)
+                .group_by(FileEmbedding.file_id)
+                .subquery()
+            )
+
+            files = (
+                self.db.query(UploadedFile)
+                .join(subquery, UploadedFile.id == subquery.c.file_id)
+                .order_by(subquery.c.latest_created_at.desc())
                 .offset((page - 1) * page_size)
                 .limit(page_size)
                 .all()
             )
 
-            results = []
-
-            for emb in embeddings:
-                item = {
-                    "id": emb.id,
-                    "source_type": emb.source_type,
-                    "created_at": emb.created_at
+            results = [
+                {
+                    "file_id": file.id,
+                    "original_filename": file.original_filename,
+                    "stored_filename": file.stored_filename,
+                    "file_path": file.file_path,
+                    "content_type": file.content_type,
+                    "uploaded_at": file.uploaded_at,
+                    "source_type": "file",
                 }
-
-                if emb.source_type == "file":
-                    file = (
-                        self.db.query(UploadedFile)
-                        .filter(UploadedFile.id == emb.file_id)
-                        .first()
-                    )
-
-                    if file:
-                        item.update({
-                            "file_id": file.id,
-                            "original_filename": file.original_filename,
-                            "stored_filename": file.stored_filename,
-                            "file_path": file.file_path,
-                            "content_type": file.content_type,
-                            "uploaded_at": file.uploaded_at,
-                        })
-
-                results.append(item)
+                for file in files
+            ]
 
             return {
                 "total": total,
